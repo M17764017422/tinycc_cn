@@ -1176,7 +1176,7 @@ ST_FUNC void asm_instr(void)
     next();
     /* since we always generate the asm() instruction, we can ignore
        volatile */
-    if (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3) {
+    if (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3 || tok == TOK_VOLATILE1_CN) {
         next();
     }
     parse_asm_str(&astr);
