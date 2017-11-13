@@ -5884,7 +5884,8 @@ static void block(int *bsym, int *csym, int is_expr)
 		} else
 			gsym(a);
 	} else if (tok == TOK_WHILE || tok == TOK_WHILE_CN) {
-		int saved_nocode_wanted;
+		int e;
+		int saved_nocode_wanted = nocode_wanted;
 		nocode_wanted &= ~0x20000000;
 		next();
 		d = ind;
@@ -5892,16 +5893,82 @@ static void block(int *bsym, int *csym, int is_expr)
 		skip('(');
 		gexpr();
 		skip(')');
-		a = gvtst(1, 0);
+		cond = condition_3way();
+		if (cond == 1)
+			a = 0, vpop();
+		else
+			a = gvtst(1, 0);
+		//a = gvtst(1, 0);
 		b = 0;
 		++local_scope;
-		saved_nocode_wanted = nocode_wanted;
+		//saved_nocode_wanted = nocode_wanted;
+		if (cond == 0)
+			nocode_wanted |= 0x20000000;
 		block(&a, &b, 0);
-		nocode_wanted = saved_nocode_wanted;
+		if (cond != 1)
+			nocode_wanted = saved_nocode_wanted;
+		//nocode_wanted = saved_nocode_wanted;
 		--local_scope;
 		gjmp_addr(d);
-		gsym(a);
-		gsym_addr(b, d);
+		c = tok;
+		if (c == TOK_ELSE || c == TOK_ELSE_CN) {
+			next();
+			e = gjmp(0);
+			gsym(a);
+			gsym_addr(b, d);
+			if (cond == 1)
+				nocode_wanted |= 0x20000000;
+			block(bsym, csym, 0);
+			gsym(e); /* patch else jmp */
+			if (cond != 0)
+				nocode_wanted = saved_nocode_wanted;
+		} else {
+			gsym(a);
+			gsym_addr(b, d);
+		}
+	} else if (tok == TOK_UNTIL || tok == TOK_UNTIL_CN) {
+		int e;
+		int saved_nocode_wanted = nocode_wanted;
+		nocode_wanted &= ~0x20000000;
+		next();
+		d = ind;
+		vla_sp_restore();
+		skip('(');
+		gexpr();
+		skip(')');
+		cond = condition_3way();
+		if (cond == 1)
+			a = 0, vpop();
+		else
+			a = gvtst(0, 0);
+		//a = gvtst(0, 0);
+		b = 0;
+		++local_scope;
+		//saved_nocode_wanted = nocode_wanted;
+		if (cond == 0)
+			nocode_wanted |= 0x20000000;
+		block(&a, &b, 0);
+		if (cond != 1)
+			nocode_wanted = saved_nocode_wanted;
+		//nocode_wanted = saved_nocode_wanted;
+		--local_scope;
+		gjmp_addr(d);
+		c = tok;
+		if (c == TOK_ELSE || c == TOK_ELSE_CN) {
+			next();
+			e = gjmp(0);
+			gsym(a);
+			gsym_addr(b, d);
+			if (cond == 1)
+				nocode_wanted |= 0x20000000;
+			block(bsym, csym, 0);
+			gsym(e); /* patch else jmp */
+			if (cond != 0)
+				nocode_wanted = saved_nocode_wanted;
+		} else {
+			gsym(a);
+			gsym_addr(b, d);
+		}
 	} else if (tok == '{') {
 		Sym *llabel;
 		int block_vla_sp_loc = vla_sp_loc, saved_vlas_in_scope = vlas_in_scope;
@@ -5993,49 +6060,79 @@ static void block(int *bsym, int *csym, int is_expr)
 		int saved_nocode_wanted;
 		nocode_wanted &= ~0x20000000;
 		next();
-		skip('(');
 		s = local_stack;
 		++local_scope;
-		if (tok != ';') {
-			/* c99 for-loop init decl? */
-			if (!decl0(VT_LOCAL, 1, NULL)) {
-				/* no, regular for-loop init expr */
-				gexpr();
-				vpop();
+		cond = condition_3way();
+		if (tok == '(')
+		{
+			skip('(');
+			if (tok != ';') {
+				/* c99 for-loop init decl? */
+				if (!decl0(VT_LOCAL, 1, NULL)) {
+					/* no, regular for-loop init expr */
+					gexpr();
+					vpop();
+				}
 			}
-		}
-		skip(';');
-		d = ind;
-		c = ind;
-		vla_sp_restore();
-		a = 0;
-		b = 0;
-		if (tok != ';') {
-			gexpr();
-			a = gvtst(1, 0);
-		}
-		skip(';');
-		if (tok != ')') {
-			e = gjmp(0);
+			skip(';');
+			d = ind;
 			c = ind;
 			vla_sp_restore();
-			gexpr();
-			vpop();
-			gjmp_addr(d);
-			gsym(e);
+			a = 0;
+			b = 0;
+			if (tok != ';') {
+				gexpr();
+				//a = gvtst(1, 0);
+				if (cond == 1)
+					a = 0, vpop();
+				else
+					a = gvtst(1, 0);
+			}
+			skip(';');
+			if (tok != ')') {
+				e = gjmp(0);
+				c = ind;
+				vla_sp_restore();
+				gexpr();
+				vpop();
+				gjmp_addr(d);
+				gsym(e);
+			}
+			skip(')');
 		}
-		skip(')');
+		else
+		{
+			d = ind;
+			c = ind;
+			vla_sp_restore();
+			a = 0;
+			b = 0;
+		}
 		saved_nocode_wanted = nocode_wanted;
 		block(&a, &b, 0);
 		nocode_wanted = saved_nocode_wanted;
 		gjmp_addr(c);
-		gsym(a);
-		gsym_addr(b, c);
+		if (tok == TOK_ELSE || tok == TOK_ELSE_CN) {
+			next();
+			e = gjmp(0);
+			gsym(a);
+			gsym_addr(b, c);
+			if (cond == 1)
+				nocode_wanted |= 0x20000000;
+			block(bsym, csym, 0);
+			gsym(e); /* patch else jmp */
+			if (cond != 0)
+				nocode_wanted = saved_nocode_wanted;
+		} else {
+			gsym(a);
+			gsym_addr(b, c);
+		}
 		--local_scope;
 		sym_pop(&local_stack, s, 0);
 
 	} else 
 	if (tok == TOK_DO || tok == TOK_DO_CN) {
+		int e;
 		int saved_nocode_wanted;
 		nocode_wanted &= ~0x20000000;
 		next();
@@ -6045,15 +6142,28 @@ static void block(int *bsym, int *csym, int is_expr)
 		vla_sp_restore();
 		saved_nocode_wanted = nocode_wanted;
 		block(&a, &b, 0);
-		if (tok == TOK_WHILE)
+		e = tok;
+		if (e == TOK_WHILE)
 			skip(TOK_WHILE);
-		else if (tok == TOK_WHILE_CN)
+		else if (e == TOK_WHILE_CN)
 			skip(TOK_WHILE_CN);
+		else if (e == TOK_UNTIL)
+			skip(TOK_UNTIL);
+		else if (e == TOK_UNTIL_CN)
+			skip(TOK_UNTIL_CN);
 		skip('(');
 		gsym(b);
 		gexpr();
-		c = gvtst(0, 0);
-		gsym_addr(c, d);
+		if (e == TOK_WHILE || e == TOK_WHILE_CN)
+		{
+			c = gvtst(0, 0);
+			gsym_addr(c, d);
+		}
+		else if (e == TOK_UNTIL || e == TOK_UNTIL_CN)
+		{
+			c = gvtst(1, 0);
+			gsym_addr(c, d);
+		}
 		nocode_wanted = saved_nocode_wanted;
 		skip(')');
 		gsym(a);
